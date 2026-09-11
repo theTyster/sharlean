@@ -1,0 +1,33 @@
+#!/usr/bin/env sh
+# Launcher for the `lean-lib` CLI. Prefers the compiled binary; falls back to
+# `lake exe` from the project root (which builds on first run).
+#   Usage: lean-lib <subcommand> [args...]   (install | list | new | manifest | unlock)
+#
+# Resolves the project root relative to this script's own location, so it
+# works whether invoked via a symlink on PATH (e.g. `ln -s $(pwd)/bin/lean-lib
+# ~/.local/bin/lean-lib`) or run in place from a clone.
+script="$0"
+while [ -L "$script" ]; do
+	link=$(readlink "$script")
+	case "$link" in
+		/*) script="$link" ;;
+		*) script="$(dirname "$script")/$link" ;;
+	esac
+done
+proj="$(cd "$(dirname "$script")/.." && pwd)"
+bin="$proj/.lake/build/bin/lean-lib"
+
+if [ -x "$bin" ]; then
+	exec "$bin" "$@"
+fi
+
+# Not built yet — fall back to lake (compiles on first invocation).
+if command -v lake >/dev/null 2>&1; then
+	echo "lean-lib: binary not built; building via lake (one-time)…" >&2
+	exec env LAKE_ARTIFACT_CACHE=true lake -d "$proj" exe lean-lib "$@"
+fi
+
+echo "lean-lib: cannot locate the CLI." >&2
+echo "  Expected project at: $proj" >&2
+echo "  Build it with:       (cd \"$proj\" && lake build)" >&2
+exit 1
