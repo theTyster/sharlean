@@ -1,12 +1,12 @@
 /-!
-# LeanLib.Util
+# Sharlean.Util
 
 Cross-cutting helpers: filesystem/env access, process orchestration, and resolution of the
 shared-library install root. Kept dependency-light (core Lean + `Cli` only) so the CLI builds
 in seconds against the shared `Cli` checkout.
 -/
 
-namespace LeanLib
+namespace Sharlean
 
 /-- Trim ASCII whitespace, pinned to a `String` result. Single fix-point for the toolchain-dependent
     `String.trim` deprecation: if a future toolchain changes `.trim` to return `String.Slice`, only
@@ -33,7 +33,7 @@ def homeDir : IO System.FilePath := do
 Resolve the shared-library install root, in priority order:
 
 1. an explicit `override` (the `--root` flag), if provided;
-2. the `LEAN_LIB_HOME` environment variable;
+2. the `SHARLEAN_HOME` environment variable;
 3. an existing `~/.lean` directory (legacy / already-populated location);
 4. `$XDG_DATA_HOME/lean` (default), falling back to `~/.local/share/lean`.
 
@@ -44,7 +44,7 @@ def resolveRoot (override : Option String := none) : IO System.FilePath := do
   match override with
   | some r => return System.FilePath.mk (← expandTilde r)
   | none =>
-    match ← IO.getEnv "LEAN_LIB_HOME" with
+    match ← IO.getEnv "SHARLEAN_HOME" with
     | some r => return System.FilePath.mk (← expandTilde r)
     | none =>
       let home ← homeDir
@@ -85,7 +85,7 @@ def verifyElan : IO (Option String) := do
   | some v => return some v
   | none =>
     IO.eprintln "error: `elan` not found on PATH."
-    IO.eprintln "  lean-lib requires elan (the official Lean toolchain manager) to be installed."
+    IO.eprintln "  sharlean requires elan (the official Lean toolchain manager) to be installed."
     IO.eprintln "  Install it from https://github.com/leanprover/elan, then re-run."
     return none
 
@@ -98,4 +98,4 @@ def ensureToolchain (toolchainFile : System.FilePath) : IO Unit := do
       let _ ← runCmd "elan" #["toolchain", "install", tc]
       pure ()
 
-end LeanLib
+end Sharlean

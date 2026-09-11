@@ -1,8 +1,8 @@
 import Lean.Data.Json
-import LeanLib.Util
+import Sharlean.Util
 
 /-!
-# LeanLib.Manifest
+# Sharlean.Manifest
 
 A project that consumes a shared library must NOT run `lake update` (it re-clones every
 transitive dependency from GitHub). Instead we synthesize a `lake-manifest.json` whose entries
@@ -16,7 +16,7 @@ the shared library itself as the first path entry.
 
 open Lean
 
-namespace LeanLib.Manifest
+namespace Sharlean.Manifest
 
 /-- One resolved dependency as a `type:"path"` manifest entry. -/
 structure PathEntry where
@@ -57,7 +57,7 @@ def buildEntries (sharedLibDir : System.FilePath) (libName : String)
   let manifestPath := sharedLibDir / "lake-manifest.json"
   unless ← manifestPath.pathExists do
     throw <| IO.userError s!"shared library manifest not found: {manifestPath}\n  \
-      Run `lake exe cache get` (or `lean-lib install`) in the shared clone first."
+      Run `lake exe cache get` (or `sharlean install`) in the shared clone first."
   let raw ← IO.FS.readFile manifestPath
   let json ← IO.ofExcept (Json.parse raw)
   let pkgsDir := sharedLibDir / ".lake" / "packages"
@@ -106,4 +106,4 @@ def generate (projectDir : System.FilePath) (projectName : String)
   IO.FS.writeFile (projectDir / "lake-manifest.json") (out.pretty ++ "\n")
   return entries.size - 1
 
-end LeanLib.Manifest
+end Sharlean.Manifest

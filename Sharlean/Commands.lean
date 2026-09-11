@@ -1,14 +1,14 @@
-import LeanLib.Util
-import LeanLib.Manifest
+import Sharlean.Util
+import Sharlean.Manifest
 
 /-!
-# LeanLib.Commands
+# Sharlean.Commands
 
 The subcommand implementations. Each takes the already-resolved arguments and returns a Unix
 exit code. The `Cli`-facing handlers live in `Main.lean` and just marshal `Parsed` into these.
 -/
 
-namespace LeanLib
+namespace Sharlean
 
 /-- Known shared libraries: canonical git URL keyed by short name. Extend as needed. -/
 def knownRepos : List (String × String) :=
@@ -32,7 +32,7 @@ private def libInfo (dir : System.FilePath) : IO (String × String) := do
     if ← tcFile.pathExists then pure (trimStr (← IO.FS.readFile tcFile)) else pure "?"
   return (rev, tc)
 
-/-- `lean-lib list` — enumerate installed shared libraries under the root. -/
+/-- `sharlean list` — enumerate installed shared libraries under the root. -/
 def cmdList (root : System.FilePath) : IO UInt32 := do
   unless ← root.pathExists do
     IO.println s!"No shared-library root at {root} (nothing installed yet)."
@@ -51,7 +51,7 @@ def cmdList (root : System.FilePath) : IO UInt32 := do
   return 0
 
 /--
-`lean-lib install <name>` — clone (if absent) and prepare a shared library.
+`sharlean install <name>` — clone (if absent) and prepare a shared library.
 
 For mathlib, follows the wiki shared-install flow (cache get). For any lib, builds it and then
 `chmod -R a-w` the `.lake/build` to guard against Lake occasionally deleting the shared clone.
@@ -118,7 +118,7 @@ def cmdInstall (root : System.FilePath) (name : String)
   IO.println s!"✔ {name} ready at {dir}"
   return 0
 
-/-- `lean-lib unlock <name>` — re-enable writes on a shared lib's build dir (for upgrades). -/
+/-- `sharlean unlock <name>` — re-enable writes on a shared lib's build dir (for upgrades). -/
 def cmdUnlock (root : System.FilePath) (name : String) : IO UInt32 := do
   let buildDir := root / libDirName name / ".lake" / "build"
   unless ← buildDir.pathExists do
@@ -135,7 +135,7 @@ private def requireLibDir (root : System.FilePath) (name : String) :
     return some dir
   else
     IO.eprintln s!"error: required library '{name}' not installed at {dir}."
-    IO.eprintln s!"  Install it first:  lean-lib install {name}"
+    IO.eprintln s!"  Install it first:  sharlean install {name}"
     return none
 
 /-- Choose the lakefile config-file name a shared lib uses (for manifest entries). -/
@@ -143,7 +143,7 @@ private def libConfigFile (dir : System.FilePath) : IO String := do
   if ← (dir / "lakefile.lean").pathExists then return "lakefile.lean" else return "lakefile.toml"
 
 /--
-`lean-lib new <projectDir> --require <lib>` — scaffold a thin project that path-requires a single
+`sharlean new <projectDir> --require <lib>` — scaffold a thin project that path-requires a single
 shared lib. Writes `lakefile.toml`, copies `lean-toolchain` from the lib, generates the
 path-manifest, and builds.
 
@@ -162,7 +162,7 @@ def cmdNew (root : System.FilePath) (projectDir : System.FilePath)
     let joined := String.intercalate ", " requires
     IO.eprintln s!"error: multiple --require libs are not supported yet ({joined})."
     IO.eprintln "  Scaffold with the primary lib, then add extra requires to lakefile.toml and \
-      run `lean-lib manifest <primary>` (a real multi-lib union is a TODO)."
+      run `sharlean manifest <primary>` (a real multi-lib union is a TODO)."
     return 1
   -- Resolve the (single) required lib up front.
   let mut libDirs : List (String × System.FilePath) := []
@@ -262,7 +262,7 @@ private def readTomlPackageName (lakefile : System.FilePath) : IO (Option String
   return none
 
 /--
-`lean-lib manifest <libName>` — (re)generate `lake-manifest.json` in the CURRENT directory for
+`sharlean manifest <libName>` — (re)generate `lake-manifest.json` in the CURRENT directory for
 an existing project that requires the shared lib `libName`. Use after a shared-lib version bump.
 
 Requires a `lakefile.toml`/`lakefile.lean` in the CWD (so it cannot be run in a non-project dir),
@@ -275,7 +275,7 @@ def cmdManifest (root : System.FilePath) (libName : String) : IO UInt32 := do
   let hasLean ← (cwd / "lakefile.lean").pathExists
   unless hasToml || hasLean do
     IO.eprintln s!"error: no lakefile.toml/lakefile.lean in {cwd}."
-    IO.eprintln "  Run `lean-lib manifest` from inside a Lean project directory."
+    IO.eprintln "  Run `sharlean manifest` from inside a Lean project directory."
     return 1
   -- Guard: the project must actually `require` this lib, else we would overwrite its manifest with
   -- an unrelated dependency (a real footgun — e.g. running `manifest batteries` in a Cli-based
@@ -301,4 +301,4 @@ def cmdManifest (root : System.FilePath) (libName : String) : IO UInt32 := do
     IO.println s!"Wrote {cwd / "lake-manifest.json"} ({depCount} deps from {libName}, name=\"{projName}\")."
     return 0
 
-end LeanLib
+end Sharlean

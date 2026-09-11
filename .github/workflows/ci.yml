@@ -14,6 +14,6 @@ jobs:
       - name: Build
         run: lake build
       - name: Smoke test — help
-        run: ./.lake/build/bin/lean-lib --help
+        run: ./.lake/build/bin/sharlean --help
       - name: Smoke test — list (no shared libs installed yet)
-        run: ./.lake/build/bin/lean-lib list
+        run: ./.lake/build/bin/sharlean list
