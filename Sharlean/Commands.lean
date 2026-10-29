@@ -14,7 +14,8 @@ namespace Sharlean
 def knownRepos : List (String × String) :=
   [ ("mathlib",   "https://github.com/leanprover-community/mathlib4.git"),
     ("batteries", "https://github.com/leanprover-community/batteries.git"),
-    ("plausible", "https://github.com/leanprover-community/plausible.git") ]
+    ("plausible", "https://github.com/leanprover-community/plausible.git"),
+    ("cslib",     "https://github.com/leanprover/cslib.git") ]
 
 def repoUrlFor (name : String) : Option String :=
   (knownRepos.find? (·.1 == name)).map (·.2)
@@ -50,11 +51,96 @@ def cmdList (root : System.FilePath) : IO UInt32 := do
   unless found do IO.println "  (none)"
   return 0
 
+/-- Choose the lakefile config-file name a shared lib uses (for manifest entries). -/
+private def libConfigFile (dir : System.FilePath) : IO String := do
+  if ← (dir / "lakefile.lean").pathExists then return "lakefile.lean" else return "lakefile.toml"
+
+/-- Trimmed contents of a lib's `lean-toolchain`, or `""` if absent. -/
+private def readToolchain (dir : System.FilePath) : IO String := do
+  let f := dir / "lean-toolchain"
+  if ← f.pathExists then return trimStr (← IO.FS.readFile f) else return ""
+
+/--
+Point the `[[require]]` blocks of a `lakefile.toml` named in `deps` at local paths: each matching
+block loses its `git`/`scope`/`rev`/`source`/`path` keys and gains `path = "<dir>"` after its
+`name` line. Every other line is kept verbatim.
+-/
+def rewriteTomlRequires (content : String) (deps : List (String × System.FilePath)) : String :=
+  Id.run do
+    -- Split into blocks, each starting at a `[header]` line (the first block is the top level).
+    let mut blocks : Array (Array String) := #[#[]]
+    for line in content.splitOn "\n" do
+      if (trimStr line).startsWith "[" then blocks := blocks.push #[line]
+      else blocks := blocks.modify (blocks.size - 1) (·.push line)
+    let squash (l : String) := (l.replace " " "").replace "\t" ""
+    let nameOf (l : String) : Option String :=
+      if (squash l).startsWith "name=\"" then (l.splitOn "\"")[1]? else none
+    let mut out : Array String := #[]
+    for block in blocks do
+      let isRequire := block[0]?.any (squash · == "[[require]]")
+      let dep := if isRequire then block.findSome? nameOf else none
+      match dep.bind fun n => deps.lookup n with
+      | none => out := out ++ block
+      | some dir =>
+        let dropped := ["git=", "scope=", "rev=", "source=", "path="]
+        for line in block do
+          unless dropped.any (fun k => (squash line).startsWith k) do
+            out := out.push line
+            if (nameOf line).isSome then out := out.push s!"path = \"{dir}\""
+    return String.intercalate "\n" out.toList
+
+/--
+Link a freshly cloned lib onto shared clones of its dependencies, so e.g. `cslib` builds against
+the installed `~/.lean/mathlib4` (prebuilt oleans) instead of cloning and compiling its own
+Mathlib. A direct git dependency is linked when it is installed (built) under `root`: its
+`[[require]]` in `lakefile.toml` becomes a path-require and `lake-manifest.json` is rewritten to
+the shared clone's closure (`Manifest.linkShared`). The toolchains must match, or the shared
+oleans would be rebuilt; a different pinned rev only warns.
+
+Idempotent: already-linked deps are path entries, so a resumed install finds nothing to do.
+This leaves the lib's `lakefile.toml` and `lake-manifest.json` modified in its git checkout;
+restore them (`git checkout -- lakefile.toml lake-manifest.json`) before checking out a new tag.
+-/
+private def linkSharedDeps (root : System.FilePath) (name : String) (dir : System.FilePath) :
+    IO UInt32 := do
+  let mut shared : Array (String × System.FilePath × String) := #[]
+  for (dep, rev, inputRev) in ← Manifest.directGitDeps dir do
+    let depDir := root / libDirName dep
+    unless ← (depDir / ".lake" / "build").pathExists do
+      if (repoUrlFor dep).isSome then
+        IO.println s!"note: {dep} is not installed under {root}, so {name} will clone and build \
+          its own copy. To share it instead, run first:  sharlean install {dep} --tag {inputRev}"
+      continue
+    let (tc, depTc) := (← readToolchain dir, ← readToolchain depDir)
+    if tc != depTc then
+      IO.eprintln s!"error: {name} needs {tc}, but the shared {dep} at {depDir} uses {depTc}."
+      IO.eprintln s!"  Move the shared {dep} to the matching release (tag {inputRev}) or check \
+        out a {name} tag that matches it."
+      return 1
+    let head := (← captureCmd "git" #["rev-parse", "HEAD"] depDir).getD "?"
+    if head != rev then
+      IO.println s!"warning: {name} pins {dep} at {rev} ({inputRev}); the shared clone is at \
+        {head}. Building against the shared clone anyway."
+    shared := shared.push (dep, depDir, ← libConfigFile depDir)
+  if shared.isEmpty then return 0
+  let lakefile := dir / "lakefile.toml"
+  unless ← lakefile.pathExists do
+    IO.eprintln s!"error: {name} uses lakefile.lean; linking shared deps supports lakefile.toml only."
+    return 1
+  let names := String.intercalate ", " (shared.toList.map (·.1))
+  IO.println s!"Linking {name} to shared {names} (path-require + path manifest) …"
+  IO.FS.writeFile lakefile <| rewriteTomlRequires (← IO.FS.readFile lakefile)
+    (shared.toList.map fun (dep, depDir, _) => (dep, depDir))
+  Manifest.linkShared dir shared
+  return 0
+
 /--
 `sharlean install <name>` — clone (if absent) and prepare a shared library.
 
-For mathlib, follows the wiki shared-install flow (cache get). For any lib, builds it and then
-`chmod -R a-w` the `.lake/build` to guard against Lake occasionally deleting the shared clone.
+For mathlib, follows the wiki shared-install flow (cache get). Any other lib is first linked onto
+shared clones of its installed dependencies (`linkSharedDeps`), so a Mathlib-based lib like cslib
+reuses the shared Mathlib's prebuilt oleans. Every lib is then built, and its `.lake/build` is
+locked with `chmod -R a-w` to guard against Lake occasionally deleting the shared clone.
 
 Idempotency is keyed on **build artifacts**, not on the directory existing: a fully-built lib
 (`.lake/build` present) is left untouched; a cloned-but-unbuilt lib (e.g. a previous run that
@@ -67,11 +153,11 @@ def cmdInstall (root : System.FilePath) (name : String)
   let dir := root / libDirName name
   let buildDir := dir / ".lake" / "build"
 
-  -- Fast path: already fully built. Only ensure the lock is applied.
-  if ← buildDir.pathExists then
-    IO.println s!"{name} already built at {dir}."
-    IO.println s!"Ensuring {buildDir} is locked read-only (chmod -R a-w)."
-    let _ ← runCmd "chmod" #["-R", "a-w", buildDir.toString]
+  -- Fast path: already built and locked. The lock is applied only after a successful build, so an
+  -- unlocked build dir is a failed or unlocked (upgrading) install: resume it below instead.
+  let writable := (← captureCmd "test" #["-w", buildDir.toString]).isSome
+  if (← buildDir.pathExists) && !writable then
+    IO.println s!"{name} already built and locked at {dir}."
     IO.println s!"✔ {name} ready at {dir}"
     return 0
 
@@ -97,11 +183,19 @@ def cmdInstall (root : System.FilePath) (name : String)
       IO.println "No --tag given; leaving at default branch HEAD. \
         Consider pinning a stable tag for reproducibility."
 
-  -- Toolchain + build (runs on both first-install and resume-after-partial paths).
+  -- Link onto shared deps, then toolchain + build (on both first-install and resume paths).
+  if name != "mathlib" then
+    let rc ← linkSharedDeps root name dir
+    if rc != 0 then return rc
   ensureToolchain (dir / "lean-toolchain")
   if name == "mathlib" then
     IO.println "Fetching prebuilt oleans (lake exe cache get) …"
     let rc ← runCmd "lake" #["exe", "cache", "get"] (cwd := dir)
+    if rc != 0 then return rc
+  else if ← Manifest.hasPathDeps dir then
+    -- No artifact cache: it writes `.hash` files into the shared deps' locked build dirs.
+    IO.println "Building shared library against its shared deps (lake build) …"
+    let rc ← runCmd "lake" #["build"] (cwd := dir)
     if rc != 0 then return rc
   else
     IO.println "Building shared library …"
@@ -137,10 +231,6 @@ private def requireLibDir (root : System.FilePath) (name : String) :
     IO.eprintln s!"error: required library '{name}' not installed at {dir}."
     IO.eprintln s!"  Install it first:  sharlean install {name}"
     return none
-
-/-- Choose the lakefile config-file name a shared lib uses (for manifest entries). -/
-private def libConfigFile (dir : System.FilePath) : IO String := do
-  if ← (dir / "lakefile.lean").pathExists then return "lakefile.lean" else return "lakefile.toml"
 
 /--
 `sharlean new <projectDir> --require <lib>` — scaffold a thin project that path-requires a single
@@ -214,10 +304,10 @@ def cmdNew (root : System.FilePath) (projectDir : System.FilePath)
   let depCount ← Manifest.generate projectDir projName libDir libNm cfg
   IO.println s!"Generated lake-manifest.json ({depCount} deps from {libNm})."
 
-  -- Build with the shared artifact cache; no network fetch, no recompile of the shared lib.
-  IO.println "Building project (LAKE_ARTIFACT_CACHE=true lake build) …"
+  -- Build against the shared lib's prebuilt oleans; no network fetch, no recompile of the shared
+  -- lib. No artifact cache: it writes `.hash` files into the shared lib's locked build dir.
+  IO.println "Building project (lake build) …"
   let rc ← runCmd "lake" #["build"] (cwd := projectDir)
-    (env := #[("LAKE_ARTIFACT_CACHE", some "true")])
   if rc != 0 then
     IO.eprintln "Build failed. Check that the toolchain matches the shared lib and that the \
       lib is installed."
@@ -242,7 +332,7 @@ where
       root module, breaking imports. -/
   isReservedModule (s : String) : Bool :=
     ["Lean", "Init", "Std", "Lake", "Cli",
-     "Mathlib", "Batteries", "Plausible", "Aesop", "Qq"].contains s
+     "Mathlib", "Batteries", "Plausible", "Aesop", "Qq", "Cslib"].contains s
 
 /-- Best-effort read of the top-level package `name = "..."` from a `lakefile.toml`. Returns `none`
     if the file or key is absent. Only used to keep a regenerated manifest's `name` consistent with

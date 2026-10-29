@@ -43,12 +43,28 @@ A `~/.lean → $XDG_DATA_HOME/lean` symlink bridges the two without migrating an
 sharlean list                                  # installed shared libs (toolchain + git rev)
 sharlean install mathlib --tag v4.29.0         # clone + cache-get + lock build dir (idempotent)
 sharlean install batteries --tag v4.29.0
+sharlean install cslib --tag v4.36.0-rc1       # built against the shared Mathlib (see below)
 sharlean install <name> --git <url> --tag <t>  # any library
 sharlean new <dir> --require batteries         # scaffold + build a thin project (no lake update)
 sharlean new <dir> --require mathlib --lib-name Proofs   # --lib-name avoids reserved-name clashes
 sharlean manifest <lib>                        # regenerate path-manifest in CWD after a version bump
 sharlean unlock <name>                         # re-enable writes on a lib's build dir for upgrades
 ```
+
+**Libraries built on other shared libraries (cslib).** When `install` clones a library other
+than Mathlib, it checks the library's direct dependencies. Each one already installed under the
+root (for cslib: `mathlib`) is linked to that shared clone: its `[[require]]` in the library's
+`lakefile.toml` becomes `path = "<root>/<dep>"`, and the library's `lake-manifest.json` is
+rewritten to path entries for the shared clone and its packages. So cslib builds only its own
+files against the prebuilt Mathlib oleans, and `sharlean new <dir> --require cslib` gets Mathlib
+through it.
+
+- Install the dependency first, at the release the library pins (`install` prints the command if
+  it is missing). Otherwise the library clones and compiles its own copy of Mathlib.
+- The toolchains must be equal, or `install` stops. A different pinned commit only warns.
+- Only `lakefile.toml` libraries can be linked.
+- The link edits `lakefile.toml` and `lake-manifest.json` in the library's checkout. Before you
+  move it to a new tag, run `git checkout -- lakefile.toml lake-manifest.json`.
 
 **One `--require` per `new`** for now. A correct multi-lib scaffold must union every lib's
 transitive closure with a consistent first-wins dedup (so the generated manifest paths agree with
@@ -74,7 +90,12 @@ directory-derived module name).
 - After installing a shared lib, `chmod -R a-w`s its `.lake/build` to guard against Lake
   occasionally deleting the shared clone during checkout. `sharlean unlock` reverses this for
   upgrades.
-- Builds with `LAKE_ARTIFACT_CACHE=true` (per-toolchain artifact cache, shared across workspaces).
+- Builds projects, and libraries linked to shared clones, with a plain `lake build`. With
+  `LAKE_ARTIFACT_CACHE=true`, Lake writes `.hash` files into the shared lib's locked `.lake/build`
+  and the build fails with `permission denied`. Libraries with no shared deps still build with
+  the artifact cache.
+- `install` treats a lib as done only when its `.lake/build` exists and is locked. The lock is
+  applied only after a successful build, so rerunning `install` resumes a failed one.
 - `sharlean` itself is built the ordinary way — `require Cli from git`, no shared clone needed
   — so a fresh clone builds standalone with nothing but `elan` on PATH.
 

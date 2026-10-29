@@ -50,7 +50,8 @@ Build the ordered list of path entries for a project requiring the shared librar
 `require`s it (e.g. `"mathlib"`, `"batteries"`).
 
 The shared library is entry #1; each transitive dep from its manifest that actually exists under
-`.lake/packages/<name>` is appended. Missing packages are reported to stderr and skipped.
+`.lake/packages/<name>` (or, for a path entry, at its `dir`) is appended. Missing packages are
+reported to stderr and skipped.
 -/
 def buildEntries (sharedLibDir : System.FilePath) (libName : String)
     (libConfigFile : String) : IO (Array PathEntry) := do
@@ -73,7 +74,13 @@ def buildEntries (sharedLibDir : System.FilePath) (libName : String)
   for pkg in pkgArr do
     let name := strField pkg "name" ""
     if name.isEmpty then continue
-    let pkgPath := pkgsDir / name
+    -- A lib whose own deps were linked to shared clones (`linkShared`) lists them as path entries;
+    -- follow those dirs instead of looking under its `.lake/packages`.
+    let pkgPath : System.FilePath :=
+      if strField pkg "type" "git" == "path" then
+        let d := System.FilePath.mk (strField pkg "dir" "")
+        if d.isAbsolute then d else sharedLibDir / d
+      else pkgsDir / name
     if ← pkgPath.pathExists then
       entries := entries.push {
         name := name, dir := pkgPath.toString,
@@ -83,6 +90,56 @@ def buildEntries (sharedLibDir : System.FilePath) (libName : String)
     else
       IO.eprintln s!"warning: {name} not found at {pkgPath}, skipping"
   return entries
+
+/-- The `packages` array of a manifest file. -/
+private def readPackages (manifestPath : System.FilePath) : IO (Json × Array Json) := do
+  let json ← IO.ofExcept (Json.parse (← IO.FS.readFile manifestPath))
+  let pkgs := (json.getObjVal? "packages").toOption.getD (Json.arr #[])
+  return (json, pkgs.getArr?.toOption.getD #[])
+
+/-- A library's direct (non-inherited) git dependencies as `(name, rev, inputRev)`, read from its
+    own `lake-manifest.json`. Empty when the lib has no manifest. -/
+def directGitDeps (libDir : System.FilePath) : IO (Array (String × String × String)) := do
+  let manifestPath := libDir / "lake-manifest.json"
+  unless ← manifestPath.pathExists do return #[]
+  let (_, pkgs) ← readPackages manifestPath
+  return pkgs.filterMap fun pkg =>
+    let name := strField pkg "name" ""
+    if name.isEmpty || strField pkg "type" "" != "git" || boolField pkg "inherited" false then none
+    else some (name, strField pkg "rev" "", strField pkg "inputRev" "")
+
+/-- Whether a lib's own manifest has any path entries, i.e. it was linked onto shared clones
+    (`linkShared`) and so builds against their locked `.lake/build` dirs. -/
+def hasPathDeps (libDir : System.FilePath) : IO Bool := do
+  let manifestPath := libDir / "lake-manifest.json"
+  unless ← manifestPath.pathExists do return false
+  let (_, pkgs) ← readPackages manifestPath
+  return pkgs.any (strField · "type" "" == "path")
+
+/--
+Rewrite `<libDir>/lake-manifest.json` so each dependency in `shared` (name, shared clone dir,
+config file) is a path entry at that clone, followed by the clone's own transitive deps (from its
+manifest, via `buildEntries`). Entries the shared closures already provide are dropped (first wins);
+every other entry is kept unchanged. The lib's `lakefile.toml` must path-require the same dirs.
+-/
+def linkShared (libDir : System.FilePath)
+    (shared : Array (String × System.FilePath × String)) : IO Unit := do
+  let manifestPath := libDir / "lake-manifest.json"
+  let (json, pkgs) ← readPackages manifestPath
+  let mut out : Array Json := #[]
+  let mut seen : Array String := #[]
+  for (name, dir, cfg) in shared do
+    for e in ← buildEntries dir name cfg do
+      unless seen.contains e.name do
+        seen := seen.push e.name
+        out := out.push { e with inherited := e.name != name }.toJson
+  for pkg in pkgs do
+    let name := strField pkg "name" ""
+    unless seen.contains name do
+      seen := seen.push name
+      out := out.push pkg
+  let updated := json.setObjVal! "packages" (Json.arr out)
+  IO.FS.writeFile manifestPath (updated.pretty ++ "\n")
 
 /-- Serialize a full project manifest JSON from the given path entries. -/
 def renderManifest (projectName : String) (entries : Array PathEntry) : Json :=
