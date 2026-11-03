@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 220" role="img" aria-label="sharlean: one Mathlib for every Lean project">
+  <rect width="900" height="220" rx="16" fill="#060a18"/>
+  <g fill="none" stroke="#2b3a6c" stroke-width="1.4">
+    <path d="M150 50C260 50 300 110 390 110"/><path d="M150 110H390"/><path d="M150 170C260 170 300 110 390 110"/>
+  </g>
+  <rect x="70" y="34" width="80" height="32" rx="6" fill="#0b1230" stroke="#62e3f7" stroke-width="1.4"/>
+  <rect x="70" y="94" width="80" height="32" rx="6" fill="#0b1230" stroke="#74e8ae" stroke-width="1.4"/>
+  <rect x="70" y="154" width="80" height="32" rx="6" fill="#0b1230" stroke="#b9adff" stroke-width="1.4"/>
+  <circle cx="440" cy="110" r="52" fill="#ffb454" fill-opacity=".18" stroke="#ffb454" stroke-width="1.6"/>
+  <circle cx="440" cy="110" r="22" fill="#ffb454"/>
+  <text x="540" y="104" font-family="Avenir Next, Segoe UI, system-ui, sans-serif" font-size="46" font-weight="700" fill="#e8edff">sharlean</text>
+  <text x="542" y="140" font-family="Avenir Next, Segoe UI, system-ui, sans-serif" font-size="20" fill="#aab5d8">One Mathlib for every Lean project</text>
+</svg>

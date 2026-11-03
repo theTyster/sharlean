@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>sharlean · one Mathlib for every Lean project</title>
+<meta name="description" content="sharlean sets up Lean projects to use one shared, globally installed copy of Mathlib, batteries and cslib, instead of each project downloading and building its own.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:ital,wght@0,200..800;1,200..800&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+/* Palette from portfolio/design/tokens.css (shared with the Sagittarius deck and portfolio.thetyster.dev). */
+:root{color-scheme:dark;--bg:#060a18;--bg2:#0c1534;--card:#101a3e;--code:#070c20;--line:#2b3a6c;--fg:#e8edff;--mute:#aab5d8;
+--accent:#62e3f7;--amber:#ffb454;--good:#74e8ae;--mid:#b9adff;--bad:#ff9a9a;
+--starc:rgba(255,255,255,.95);--star-op:.5;--neb1:rgba(70,100,230,.26);--neb2:rgba(0,200,220,.12);
+--sans:"Atkinson Hyperlegible Next",system-ui,-apple-system,"Segoe UI",sans-serif;
+--display:"Avenir Next","Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+--mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+@media (prefers-color-scheme:light){:root{color-scheme:light;--bg:#f1f4fb;--bg2:#e4eaf8;--card:#fff;--code:#eef2fb;--line:#c6d0e8;--fg:#121a36;--mute:#475274;
+--accent:#0a6a88;--amber:#8a5200;--good:#17703f;--mid:#5645c4;--bad:#a82828;--starc:rgba(40,60,140,.45);--star-op:.3;--neb1:rgba(90,120,230,.14);--neb2:rgba(0,170,200,.08)}}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;color:var(--fg);font:18px/1.6 var(--sans);
+  background:radial-gradient(ellipse 70% 45% at 85% -8%,var(--neb1),transparent 70%),radial-gradient(ellipse 60% 40% at -5% 105%,var(--neb2),transparent 70%),linear-gradient(180deg,var(--bg),var(--bg2) 160%);
+  background-color:var(--bg);background-attachment:fixed}
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:var(--star-op);
+  background:radial-gradient(1px 1px at 23px 41px,var(--starc),transparent) 0 0/197px 173px,radial-gradient(1.4px 1.4px at 91px 12px,var(--starc),transparent) 0 0/251px 229px,radial-gradient(1px 1px at 140px 120px,rgba(180,220,255,.8),transparent) 0 0/313px 277px}
+main{max-width:1040px;margin:0 auto;padding:0 24px}
+section{padding:72px 0 0}
+h1,h2,h3{font-family:var(--display);line-height:1.1;text-wrap:balance}
+h1{font-size:clamp(44px,7vw,80px);margin:0;letter-spacing:-.03em}
+h1 em{font-style:normal;color:var(--amber)}
+h2{font-size:30px;margin:0 0 8px;letter-spacing:-.02em}
+h3{font-size:19px;margin:0 0 6px}
+p{max-width:66ch}
+.lede{color:var(--mute);margin:0 0 28px}
+.hero{padding-top:96px}
+.hero p{font-size:21px;color:var(--mute);margin:20px 0 28px}
+a{color:var(--accent);text-underline-offset:.2em}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+code{font-family:var(--mono);font-size:.9em}
+.cmd{display:inline-flex;gap:10px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 14px;font:15px var(--mono)}
+.cmd b{color:var(--amber);font-weight:400}
+.compare{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media(max-width:760px){.compare{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px}
+.panel p{color:var(--mute);margin:8px 0 0;font-size:16px}
+.panel svg{width:100%;height:auto;display:block;margin-top:12px}
+pre{margin:0;background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px;overflow-x:auto;font:14px/1.7 var(--mono)}
+pre .c{color:var(--mute)} pre .k{color:var(--accent)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px}
+.grid .panel p{margin:0}
+.limits li{margin:8px 0;max-width:66ch}
+.limits li::marker{color:var(--amber)}
+footer{padding:72px 0 56px;color:var(--mute);font-size:15px}
+</style>
+</head>
+<body>
+<main>
+
+<section class="hero">
+  <h1>One <em>Mathlib</em><br>for every Lean project.</h1>
+  <p>Every Lean project normally downloads and builds its own multi-gigabyte copy of Mathlib. sharlean points every project at one shared, globally installed copy instead.</p>
+  <span class="cmd"><b>$</b> sharlean new my_proof --require mathlib</span>
+</section>
+
+<section>
+  <h2>Many copies, or one</h2>
+  <p class="lede">The same three proof projects, set up the usual way and with sharlean.</p>
+  <div class="compare">
+    <div class="panel">
+      <h3>Without sharlean</h3>
+      <svg viewBox="0 0 400 200" fill="none" role="img" aria-label="Three projects, each with its own copy of Mathlib">
+        <g font-family="JetBrains Mono, monospace" font-size="13" fill="var(--mute)">
+          <rect x="20" y="20" width="110" height="40" rx="6" stroke="var(--accent)" fill="var(--code)"/><text x="75" y="45" text-anchor="middle">proof_a</text>
+          <rect x="145" y="20" width="110" height="40" rx="6" stroke="var(--good)" fill="var(--code)"/><text x="200" y="45" text-anchor="middle">proof_b</text>
+          <rect x="270" y="20" width="110" height="40" rx="6" stroke="var(--mid)" fill="var(--code)"/><text x="325" y="45" text-anchor="middle">proof_c</text>
+          <path d="M75 60V110M200 60V110M325 60V110" fill="none" stroke="var(--line)" stroke-width="1.4"/>
+          <circle cx="75" cy="140" r="28" fill="var(--bad)" fill-opacity=".18" stroke="var(--bad)"/><text x="75" y="186" text-anchor="middle">Mathlib</text>
+          <circle cx="200" cy="140" r="28" fill="var(--bad)" fill-opacity=".18" stroke="var(--bad)"/><text x="200" y="186" text-anchor="middle">Mathlib</text>
+          <circle cx="325" cy="140" r="28" fill="var(--bad)" fill-opacity=".18" stroke="var(--bad)"/><text x="325" y="186" text-anchor="middle">Mathlib</text>
+        </g>
+      </svg>
+      <p>Each project clones and builds its own dependencies. <code>lake update</code> re-clones them all again.</p>
+    </div>
+    <div class="panel">
+      <h3>With sharlean</h3>
+      <svg viewBox="0 0 400 200" fill="none" role="img" aria-label="Three projects pointing at one shared copy of Mathlib">
+        <g font-family="JetBrains Mono, monospace" font-size="13" fill="var(--mute)">
+          <rect x="20" y="20" width="110" height="40" rx="6" stroke="var(--accent)" fill="var(--code)"/><text x="75" y="45" text-anchor="middle">proof_a</text>
+          <rect x="145" y="20" width="110" height="40" rx="6" stroke="var(--good)" fill="var(--code)"/><text x="200" y="45" text-anchor="middle">proof_b</text>
+          <rect x="270" y="20" width="110" height="40" rx="6" stroke="var(--mid)" fill="var(--code)"/><text x="325" y="45" text-anchor="middle">proof_c</text>
+          <path d="M75 60C75 100 170 110 190 120M200 60V112M325 60C325 100 230 110 210 120" fill="none" stroke="var(--line)" stroke-width="1.4"/>
+          <circle cx="200" cy="140" r="34" fill="var(--amber)" fill-opacity=".18" stroke="var(--amber)" stroke-width="1.6"/>
+          <circle cx="200" cy="140" r="15" fill="var(--amber)"/>
+          <text x="200" y="192" text-anchor="middle">one shared Mathlib, read-only</text>
+        </g>
+      </svg>
+      <p>Each project's manifest points at the shared copy by local path. Nothing is downloaded or rebuilt.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Commands</h2>
+  <p class="lede">Install a library once, then scaffold as many projects against it as you like.</p>
+<pre><span class="k">sharlean list</span>                                  <span class="c"># installed shared libs (toolchain + git rev)</span>
+<span class="k">sharlean install mathlib</span> --tag v4.29.0         <span class="c"># clone + cache-get + lock build dir (idempotent)</span>
+<span class="k">sharlean install cslib</span> --tag v4.36.0-rc1       <span class="c"># built against the shared Mathlib</span>
+<span class="k">sharlean new</span> &lt;dir&gt; --require mathlib          <span class="c"># scaffold + build a thin project (no lake update)</span>
+<span class="k">sharlean manifest</span> &lt;lib&gt;                        <span class="c"># regenerate the path manifest after a version bump</span>
+<span class="k">sharlean unlock</span> &lt;name&gt;                         <span class="c"># re-enable writes on a lib's build dir for upgrades</span></pre>
+</section>
+
+<section>
+  <h2>How it keeps the shared copy safe</h2>
+  <div class="grid">
+    <div class="panel"><h3>Never runs <code>lake update</code></h3><p>Manifests hold only local path entries, pointing at packages the shared clone already has checked out.</p></div>
+    <div class="panel"><h3>Locks the build</h3><p>After a successful build the shared <code>.lake/build</code> is made read-only, so Lake cannot delete it. An interrupted install resumes.</p></div>
+    <div class="panel"><h3>Matches the toolchain</h3><p>Each new project copies its <code>lean-toolchain</code> from the shared library, because a mismatch means an hours-long rebuild.</p></div>
+    <div class="panel"><h3>Links libraries to each other</h3><p>cslib is rewired to build only its own files against the prebuilt Mathlib, and projects get Mathlib through it.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>Known limits</h2>
+  <ul class="limits">
+    <li>One <code>--require</code> per <code>new</code> for now. To combine libraries, scaffold with the primary one, add <code>require</code> lines, and rerun <code>sharlean manifest</code>.</li>
+    <li>Hyphens in the project directory break the build (<code>expected a 'Name'</code>). Use underscores: <code>my_project</code>.</li>
+    <li>With <code>LAKE_ARTIFACT_CACHE=true</code>, Lake tries to write into the locked build and fails, so linked projects build without it.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Install</h2>
+<pre><span class="k">git clone</span> https://github.com/theTyster/sharlean.git
+<span class="k">cd</span> sharlean &amp;&amp; lake build
+<span class="k">ln -s</span> "$(pwd)/bin/sharlean" ~/.local/bin/sharlean</pre>
+  <p class="lede" style="margin-top:12px">Needs only <a href="https://github.com/leanprover/elan">elan</a> on your PATH.</p>
+</section>
+
+<footer>sharlean · Apache-2.0 · <a href="https://github.com/theTyster/sharlean">source</a> · by <a href="https://portfolio.thetyster.dev/#work/sharlean">Ty Davis</a>. The <a href="https://thetyster.github.io/sagittarius/">Sagittarius</a> deck points to it for Lean proof work.</footer>
+</main>
+</body>
+</html>

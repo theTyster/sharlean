@@ -1,5 +1,9 @@
 # sharlean
 
+![sharlean: one Mathlib for every Lean project](docs/banner.svg)
+
+Site: <https://thetyster.github.io/sharlean/>
+
 Deterministic CLI (written in Lean 4, reusing the shared `Cli` package) for
 scaffolding Lean projects against globally-installed shared libraries via the
 sanctioned shared-clone + path-require + rewritten-manifest pattern. Avoids
